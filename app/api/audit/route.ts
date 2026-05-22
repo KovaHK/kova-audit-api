@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   try {
     claudeResponse = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      max_tokens: 4000,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Scraped content from ${url}:\n\n${truncated}` }],
     });
@@ -94,10 +94,16 @@ export async function POST(req: NextRequest) {
   const textBlock = claudeResponse.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") return err("No text response from Claude");
 
-  const rawText = textBlock.text
+  let rawText = textBlock.text
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/, "")
     .trim();
+
+  // If truncated mid-JSON, trim to the last complete closing brace
+  if (!rawText.endsWith("}")) {
+    const lastBrace = rawText.lastIndexOf("}");
+    if (lastBrace !== -1) rawText = rawText.slice(0, lastBrace + 1);
+  }
 
   try {
     const parsed = JSON.parse(rawText);
