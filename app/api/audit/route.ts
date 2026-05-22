@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
+export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -18,10 +19,10 @@ const USER_AGENT =
 const SUB_PATHS = ["/jobs", "/careers", "/vacancies", "/work-with-us"];
 
 const SYSTEM_PROMPT =
-  `You are a JSON API. You must respond with ONLY a raw JSON object. No markdown. No code fences. No explanation. No preamble. Start your response with { and end with }. Nothing else.
+  `You are a JSON API. Respond with ONLY a valid JSON object. No markdown, no code fences, no explanation. Start with { and end with }.
 
-Audit the UK healthcare recruitment agency website content provided. Return this exact JSON structure:
-{"company":"string","score":35,"locations":"string","specialisms":"string","summary":"string","issues":[{"severity":"CRITICAL","title":"string","detail":"string","impact":"string"},{"severity":"CRITICAL","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"NOTABLE","title":"string","detail":"string","impact":"string"}],"strengths":[{"title":"string","detail":"string"},{"title":"string","detail":"string"},{"title":"string","detail":"string"},{"title":"string","detail":"string"}],"journeySteps":[{"label":"string","status":"ok","note":null},{"label":"string","status":"warn","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"warn","note":"string"}],"opportunities":[{"icon":"⚡","title":"string","desc":"string","impact":"string"},{"icon":"🎯","title":"string","desc":"string","impact":"string"},{"icon":"📡","title":"string","desc":"string","impact":"string"}],"timeToContact":"string","candidateLoss":"string","monthlyApps":"string","impactStatement":"string"}`;
+Analyse the scraped website content and return this JSON:
+{"company":"","score":0,"locations":"","specialisms":"","summary":"","issues":[{"severity":"CRITICAL","title":"","detail":"","impact":""},{"severity":"CRITICAL","title":"","detail":"","impact":""},{"severity":"SIGNIFICANT","title":"","detail":"","impact":""},{"severity":"SIGNIFICANT","title":"","detail":"","impact":""},{"severity":"NOTABLE","title":"","detail":"","impact":""}],"strengths":[{"title":"","detail":""},{"title":"","detail":""},{"title":"","detail":""},{"title":"","detail":""}],"journeySteps":[{"label":"","status":"ok","note":null},{"label":"","status":"warn","note":""},{"label":"","status":"gap","note":""},{"label":"","status":"gap","note":""},{"label":"","status":"warn","note":""}],"opportunities":[{"icon":"⚡","title":"","desc":"","impact":""},{"icon":"🎯","title":"","desc":"","impact":""},{"icon":"📡","title":"","desc":"","impact":""}],"timeToContact":"","candidateLoss":"","monthlyApps":"","impactStatement":""}`;
 
 function stripHtml(html: string): string {
   let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ");
@@ -80,13 +81,13 @@ export async function POST(req: NextRequest) {
 
   const subPages = await Promise.all(SUB_PATHS.map((p) => fetchText(`${origin}${p}`)));
   const combined = [main, ...subPages.filter(Boolean)].join("\n\n");
-  const truncated = combined.length > 4000 ? combined.slice(0, 4000) : combined;
+  const truncated = combined.length > 3000 ? combined.slice(0, 3000) : combined;
 
   let claudeResponse: Anthropic.Message;
   try {
     claudeResponse = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 2000,
+      max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `RESPOND WITH JSON ONLY. NO MARKDOWN. Audit this agency website content:\n\n${truncated}` }],
     });
