@@ -18,7 +18,7 @@ const USER_AGENT =
 const SUB_PATHS = ["/jobs", "/careers", "/vacancies", "/work-with-us"];
 
 const SYSTEM_PROMPT =
-  `You are a senior recruitment technology consultant auditing UK healthcare staffing agencies for Kova. You have real scraped content from their website. Produce a specific evidence-based audit referencing actual details found — locations, role types, pay rates, application process steps. Do not invent details not present. Respond ONLY with valid JSON, no markdown. Schema: {"company":"string","score":number 20-55,"locations":"string","specialisms":"string","summary":"2 sentences specific to what you found","issues":[{"severity":"CRITICAL","title":"string","detail":"2-3 sentences referencing actual site content","impact":"string"},{"severity":"CRITICAL","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"NOTABLE","title":"string","detail":"string","impact":"string"}],"strengths":[{"title":"string","detail":"1 sentence from their actual site"},{"title":"string","detail":"string"},{"title":"string","detail":"string"},{"title":"string","detail":"string"}],"journeySteps":[{"label":"string","status":"ok","note":null},{"label":"string","status":"warn","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"warn","note":"string"}],"opportunities":[{"icon":"⚡","title":"string","desc":"2-3 sentences specific to this agency","impact":"string"},{"icon":"🎯","title":"string","desc":"string","impact":"string"},{"icon":"📡","title":"string","desc":"string","impact":"string"}],"timeToContact":"string","candidateLoss":"string","monthlyApps":"string","impactStatement":"1 sentence with their company name and specific situation"}`;
+  `Be concise. Every string value must be under 150 characters. Detail fields maximum 2 sentences. You are a senior recruitment technology consultant auditing UK healthcare staffing agencies for Kova. You have real scraped content from their website. Produce a specific evidence-based audit referencing actual details found — locations, role types, pay rates, application process steps. Do not invent details not present. Respond ONLY with valid JSON, no markdown. Schema: {"company":"string","score":number 20-55,"locations":"string","specialisms":"string","summary":"2 sentences specific to what you found","issues":[{"severity":"CRITICAL","title":"string","detail":"1-2 sentences referencing actual site content","impact":"string"},{"severity":"CRITICAL","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"NOTABLE","title":"string","detail":"string","impact":"string"}],"strengths":[{"title":"string","detail":"1 sentence from their actual site"},{"title":"string","detail":"string"},{"title":"string","detail":"string"},{"title":"string","detail":"string"}],"journeySteps":[{"label":"string","status":"ok","note":null},{"label":"string","status":"warn","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"warn","note":"string"}],"opportunities":[{"icon":"⚡","title":"string","desc":"1-2 sentences specific to this agency","impact":"string"},{"icon":"🎯","title":"string","desc":"string","impact":"string"},{"icon":"📡","title":"string","desc":"string","impact":"string"}],"timeToContact":"string","candidateLoss":"string","monthlyApps":"string","impactStatement":"1 sentence with their company name and specific situation"}`;
 
 function stripHtml(html: string): string {
   let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ");
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   try {
     claudeResponse = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 4000,
+      max_tokens: 3000,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Scraped content from ${url}:\n\n${truncated}` }],
     });
@@ -99,10 +99,31 @@ export async function POST(req: NextRequest) {
     .replace(/\s*```\s*$/, "")
     .trim();
 
-  // If truncated mid-JSON, trim to the last complete closing brace
+  // Recovery: if truncated mid-JSON, find the last clean closing sequence
+  // and append the minimum brackets needed to close open arrays/objects.
   if (!rawText.endsWith("}")) {
-    const lastBrace = rawText.lastIndexOf("}");
-    if (lastBrace !== -1) rawText = rawText.slice(0, lastBrace + 1);
+    // Prefer a natural boundary like "}]}" or "}}" over a bare "}"
+    const boundary = ["}]}", "}}"].reduce<number>((best, seq) => {
+      const idx = rawText.lastIndexOf(seq);
+      return idx !== -1 && idx + seq.length - 1 > best ? idx + seq.length - 1 : best;
+    }, rawText.lastIndexOf("}"));
+
+    if (boundary !== -1) {
+      rawText = rawText.slice(0, boundary + 1);
+      // Count unmatched open brackets and close them
+      let opens = 0;
+      let inStr = false;
+      for (let i = 0; i < rawText.length; i++) {
+        const c = rawText[i];
+        if (c === '"' && rawText[i - 1] !== "\\") inStr = !inStr;
+        if (!inStr) {
+          if (c === "[" || c === "{") opens++;
+          else if (c === "]" || c === "}") opens--;
+        }
+      }
+      // Append closing brackets in reverse order (arrays before objects)
+      while (opens-- > 0) rawText += rawText.includes("[") ? "]}" : "}";
+    }
   }
 
   try {
