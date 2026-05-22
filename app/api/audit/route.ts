@@ -97,30 +97,31 @@ export async function POST(req: NextRequest) {
   const textBlock = claudeResponse.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") return err("No text response from Claude");
 
-  let rawText = textBlock.text.trim();
+  let claudeText = textBlock.text.trim();
 
   // Strip opening code fence (e.g. ```json\n or ```\n)
-  if (rawText.startsWith("```")) {
-    const newline = rawText.indexOf("\n");
-    rawText = newline !== -1 ? rawText.slice(newline + 1).trim() : rawText.slice(3).trim();
+  if (claudeText.startsWith("```")) {
+    const newline = claudeText.indexOf("\n");
+    claudeText = newline !== -1 ? claudeText.slice(newline + 1).trim() : claudeText.slice(3).trim();
   }
   // Strip closing code fence
-  if (rawText.endsWith("```")) rawText = rawText.slice(0, rawText.lastIndexOf("```")).trim();
+  if (claudeText.endsWith("```")) claudeText = claudeText.slice(0, claudeText.lastIndexOf("```")).trim();
   // Find the first { in case there's any remaining preamble
-  const firstBrace = rawText.indexOf("{");
-  if (firstBrace > 0) rawText = rawText.slice(firstBrace);
+  const firstBrace = claudeText.indexOf("{");
+  if (firstBrace > 0) claudeText = claudeText.slice(firstBrace);
   // Find the last } in case there's any trailing content
-  const lastBrace = rawText.lastIndexOf("}");
-  if (lastBrace !== -1 && lastBrace < rawText.length - 1) rawText = rawText.slice(0, lastBrace + 1);
+  const lastBrace = claudeText.lastIndexOf("}");
+  if (lastBrace !== -1 && lastBrace < claudeText.length - 1) claudeText = claudeText.slice(0, lastBrace + 1);
+
+  console.log('CLAUDE RAW:', JSON.stringify(claudeText.substring(0, 500)));
 
   try {
-    const parsed = JSON.parse(rawText);
+    const parsed = JSON.parse(claudeText);
     return NextResponse.json(parsed, { status: 200, headers: CORS_HEADERS });
   } catch (e) {
-    console.error("JSON parse failed:", e);
-    console.error("Raw Claude response:", rawText);
+    console.log('PARSE ERROR on text starting with:', JSON.stringify(claudeText.substring(0, 200)));
     return NextResponse.json(
-      { error: "Claude returned non-JSON", raw: rawText },
+      { error: "Claude returned non-JSON", raw: claudeText },
       { status: 500, headers: CORS_HEADERS }
     );
   }
