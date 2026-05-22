@@ -18,7 +18,7 @@ const USER_AGENT =
 const SUB_PATHS = ["/jobs", "/careers", "/vacancies", "/work-with-us"];
 
 const SYSTEM_PROMPT =
-  `Be concise. Every string value must be under 150 characters. Detail fields maximum 2 sentences. You are a senior recruitment technology consultant auditing UK healthcare staffing agencies for Kova. You have real scraped content from their website. Produce a specific evidence-based audit referencing actual details found — locations, role types, pay rates, application process steps. Do not invent details not present. Respond ONLY with valid JSON, no markdown. Schema: {"company":"string","score":number 20-55,"locations":"string","specialisms":"string","summary":"2 sentences specific to what you found","issues":[{"severity":"CRITICAL","title":"string","detail":"1-2 sentences referencing actual site content","impact":"string"},{"severity":"CRITICAL","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"NOTABLE","title":"string","detail":"string","impact":"string"}],"strengths":[{"title":"string","detail":"1 sentence from their actual site"},{"title":"string","detail":"string"},{"title":"string","detail":"string"},{"title":"string","detail":"string"}],"journeySteps":[{"label":"string","status":"ok","note":null},{"label":"string","status":"warn","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"warn","note":"string"}],"opportunities":[{"icon":"⚡","title":"string","desc":"1-2 sentences specific to this agency","impact":"string"},{"icon":"🎯","title":"string","desc":"string","impact":"string"},{"icon":"📡","title":"string","desc":"string","impact":"string"}],"timeToContact":"string","candidateLoss":"string","monthlyApps":"string","impactStatement":"1 sentence with their company name and specific situation"}`;
+  `You are a senior recruitment technology consultant auditing UK healthcare staffing agencies for Kova. You have real scraped content from their website. Produce a specific evidence-based audit referencing actual details found — locations, role types, pay rates, application process steps. Do not invent details not present. Respond ONLY with valid JSON, no markdown. Return ONLY a JSON object with these fields: company, score (20-55), locations, specialisms, summary (2 sentences), issues (array of 5 objects each with severity, title, detail (MAX 1 sentence), impact (3 words)), strengths (array of 4 objects each with title, detail (MAX 1 sentence)), journeySteps (array of 5 objects each with label, status ok/warn/gap, note (MAX 8 words or null)), opportunities (array of 3 objects each with icon, title, desc (MAX 2 sentences), impact (3 words)), timeToContact, candidateLoss, monthlyApps, impactStatement (MAX 1 sentence). Every string must be under 100 characters except detail and desc fields which must be under 200 characters.`;
 
 function stripHtml(html: string): string {
   let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ");
@@ -77,13 +77,13 @@ export async function POST(req: NextRequest) {
 
   const subPages = await Promise.all(SUB_PATHS.map((p) => fetchText(`${origin}${p}`)));
   const combined = [main, ...subPages.filter(Boolean)].join("\n\n");
-  const truncated = combined.length > 8000 ? combined.slice(0, 8000) : combined;
+  const truncated = combined.length > 4000 ? combined.slice(0, 4000) : combined;
 
   let claudeResponse: Anthropic.Message;
   try {
     claudeResponse = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 3000,
+      max_tokens: 2000,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Scraped content from ${url}:\n\n${truncated}` }],
     });
@@ -99,39 +99,15 @@ export async function POST(req: NextRequest) {
     .replace(/\s*```\s*$/, "")
     .trim();
 
-  // Recovery: if truncated mid-JSON, find the last clean closing sequence
-  // and append the minimum brackets needed to close open arrays/objects.
-  if (!rawText.endsWith("}")) {
-    // Prefer a natural boundary like "}]}" or "}}" over a bare "}"
-    const boundary = ["}]}", "}}"].reduce<number>((best, seq) => {
-      const idx = rawText.lastIndexOf(seq);
-      return idx !== -1 && idx + seq.length - 1 > best ? idx + seq.length - 1 : best;
-    }, rawText.lastIndexOf("}"));
-
-    if (boundary !== -1) {
-      rawText = rawText.slice(0, boundary + 1);
-      // Count unmatched open brackets and close them
-      let opens = 0;
-      let inStr = false;
-      for (let i = 0; i < rawText.length; i++) {
-        const c = rawText[i];
-        if (c === '"' && rawText[i - 1] !== "\\") inStr = !inStr;
-        if (!inStr) {
-          if (c === "[" || c === "{") opens++;
-          else if (c === "]" || c === "}") opens--;
-        }
-      }
-      // Append closing brackets in reverse order (arrays before objects)
-      while (opens-- > 0) rawText += rawText.includes("[") ? "]}" : "}";
-    }
-  }
-
   try {
     const parsed = JSON.parse(rawText);
     return NextResponse.json(parsed, { status: 200, headers: CORS_HEADERS });
   } catch (e) {
     console.error("JSON parse failed:", e);
     console.error("Raw Claude response:", rawText);
-    return err("Claude returned non-JSON");
+    return NextResponse.json(
+      { error: "Claude returned non-JSON", raw: rawText },
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
 }
