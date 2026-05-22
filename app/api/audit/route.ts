@@ -19,9 +19,11 @@ const USER_AGENT =
 const SUB_PATHS = ["/jobs", "/careers", "/vacancies", "/work-with-us"];
 
 const SYSTEM_PROMPT =
-  `You are a JSON API. Respond with ONLY a valid JSON object. No markdown, no code fences, no explanation. Start with { and end with }.
+  `You are a JSON API. Output ONLY a JSON object starting with { and ending with }. No markdown.
 
-Analyse the scraped website content and return this JSON:
+Rules: Every field value must be SHORT. detail fields: max 20 words. desc fields: max 25 words. summary: max 25 words. All other strings: max 15 words. Strictly enforce these limits.
+
+Return this structure:
 {"company":"","score":0,"locations":"","specialisms":"","summary":"","issues":[{"severity":"CRITICAL","title":"","detail":"","impact":""},{"severity":"CRITICAL","title":"","detail":"","impact":""},{"severity":"SIGNIFICANT","title":"","detail":"","impact":""},{"severity":"SIGNIFICANT","title":"","detail":"","impact":""},{"severity":"NOTABLE","title":"","detail":"","impact":""}],"strengths":[{"title":"","detail":""},{"title":"","detail":""},{"title":"","detail":""},{"title":"","detail":""}],"journeySteps":[{"label":"","status":"ok","note":null},{"label":"","status":"warn","note":""},{"label":"","status":"gap","note":""},{"label":"","status":"gap","note":""},{"label":"","status":"warn","note":""}],"opportunities":[{"icon":"⚡","title":"","desc":"","impact":""},{"icon":"🎯","title":"","desc":"","impact":""},{"icon":"📡","title":"","desc":"","impact":""}],"timeToContact":"","candidateLoss":"","monthlyApps":"","impactStatement":""}`;
 
 function stripHtml(html: string): string {
@@ -87,7 +89,7 @@ export async function POST(req: NextRequest) {
   try {
     claudeResponse = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 8192,
+      max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `RESPOND WITH JSON ONLY. NO MARKDOWN. Audit this agency website content:\n\n${truncated}` }],
     });
