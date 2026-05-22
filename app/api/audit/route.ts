@@ -18,7 +18,10 @@ const USER_AGENT =
 const SUB_PATHS = ["/jobs", "/careers", "/vacancies", "/work-with-us"];
 
 const SYSTEM_PROMPT =
-  `You are a senior recruitment technology consultant auditing UK healthcare staffing agencies for Kova. You have real scraped content from their website. Produce a specific evidence-based audit referencing actual details found — locations, role types, pay rates, application process steps. Do not invent details not present. Respond ONLY with valid JSON, no markdown. Return ONLY a JSON object with these fields: company, score (20-55), locations, specialisms, summary (2 sentences), issues (array of 5 objects each with severity, title, detail (MAX 1 sentence), impact (3 words)), strengths (array of 4 objects each with title, detail (MAX 1 sentence)), journeySteps (array of 5 objects each with label, status ok/warn/gap, note (MAX 8 words or null)), opportunities (array of 3 objects each with icon, title, desc (MAX 2 sentences), impact (3 words)), timeToContact, candidateLoss, monthlyApps, impactStatement (MAX 1 sentence). Every string must be under 100 characters except detail and desc fields which must be under 200 characters.`;
+  `You are a JSON API. You must respond with ONLY a raw JSON object. No markdown. No code fences. No explanation. No preamble. Start your response with { and end with }. Nothing else.
+
+Audit the UK healthcare recruitment agency website content provided. Return this exact JSON structure:
+{"company":"string","score":35,"locations":"string","specialisms":"string","summary":"string","issues":[{"severity":"CRITICAL","title":"string","detail":"string","impact":"string"},{"severity":"CRITICAL","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"SIGNIFICANT","title":"string","detail":"string","impact":"string"},{"severity":"NOTABLE","title":"string","detail":"string","impact":"string"}],"strengths":[{"title":"string","detail":"string"},{"title":"string","detail":"string"},{"title":"string","detail":"string"},{"title":"string","detail":"string"}],"journeySteps":[{"label":"string","status":"ok","note":null},{"label":"string","status":"warn","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"gap","note":"string"},{"label":"string","status":"warn","note":"string"}],"opportunities":[{"icon":"⚡","title":"string","desc":"string","impact":"string"},{"icon":"🎯","title":"string","desc":"string","impact":"string"},{"icon":"📡","title":"string","desc":"string","impact":"string"}],"timeToContact":"string","candidateLoss":"string","monthlyApps":"string","impactStatement":"string"}`;
 
 function stripHtml(html: string): string {
   let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ");
@@ -85,7 +88,7 @@ export async function POST(req: NextRequest) {
       model: "claude-sonnet-4-6",
       max_tokens: 2000,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: `Scraped content from ${url}:\n\n${truncated}` }],
+      messages: [{ role: "user", content: `RESPOND WITH JSON ONLY. NO MARKDOWN. Audit this agency website content:\n\n${truncated}` }],
     });
   } catch (e) {
     return err(e instanceof Error ? e.message : "Claude API error");
@@ -94,10 +97,21 @@ export async function POST(req: NextRequest) {
   const textBlock = claudeResponse.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") return err("No text response from Claude");
 
-  let rawText = textBlock.text
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/, "")
-    .trim();
+  let rawText = textBlock.text.trim();
+
+  // Strip opening code fence (e.g. ```json\n or ```\n)
+  if (rawText.startsWith("```")) {
+    const newline = rawText.indexOf("\n");
+    rawText = newline !== -1 ? rawText.slice(newline + 1).trim() : rawText.slice(3).trim();
+  }
+  // Strip closing code fence
+  if (rawText.endsWith("```")) rawText = rawText.slice(0, rawText.lastIndexOf("```")).trim();
+  // Find the first { in case there's any remaining preamble
+  const firstBrace = rawText.indexOf("{");
+  if (firstBrace > 0) rawText = rawText.slice(firstBrace);
+  // Find the last } in case there's any trailing content
+  const lastBrace = rawText.lastIndexOf("}");
+  if (lastBrace !== -1 && lastBrace < rawText.length - 1) rawText = rawText.slice(0, lastBrace + 1);
 
   try {
     const parsed = JSON.parse(rawText);
